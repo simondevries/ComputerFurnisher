@@ -1,4 +1,11 @@
-Function Add-Printer-Run-Validation([Object] $status){
+$taskDefinition = [PSCustomObject]@{
+    isRerunnable=$false;
+}
+$taskDefinition | Add-Member -Name 'ValidateFunction' -Type ScriptMethod -Value {Validation}
+$taskDefinition | Add-Member -Name 'ExecuteFunction' -Type ScriptMethod -Value {Execution}
+$global:tasks["AddPrinters"] = $taskDefinition
+
+Function Validation(){
     $foundServer = Test-Connection -computerName $env:PrintServer -Quiet
     $a = $foundServer.GetType()
     
@@ -9,20 +16,17 @@ Function Add-Printer-Run-Validation([Object] $status){
     throw "Add printer failed validation as a connection to $env:PrintServer could not be established"
 }
 
-Function Add-Printers([Object] $status, [Object] $printersToAdd) {
-    #todo What printers to add?
-# This function maps printers from an array
-    # Loop over the array
+Function Execution() {
+    $printersToAdd = $global:job.PrintersToAdd
     Write-Host "Printers to add $printersToAdd"
-
 
     foreach ($printer in $printersToAdd) {
         Try {
             Write-Host "Adding printer $printer"
             (New-Object -ComObject WScript.Network).AddWindowsPrinterConnection($printer)
-            $status.SuccessfulPrinterInstalls += $printer
+            $global:status.SuccessfulPrinterInstalls += $printer
         } Catch {
-            $status.UnsuccessfulPrinterInstalls += $printer
+            $global:status.UnsuccessfulPrinterInstalls += $printer
         }
     }
 }
