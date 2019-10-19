@@ -1,34 +1,22 @@
-Function Software-Installation-Run-Validation([Object] $status, [String[]] $softwareToInstall) {
-    #todo sdv this is not very accurate
-    # $softwareFromFolders = Get-ChildItem -Path $pathToSoftwareInstallers
-    # foreach ($softwareFromJob in $softwareToInstall) {
-    #     $installerExists = Test-Path "$pathToSoftwareInstallers/$softwareFromJob/install.bat" -PathType Leaf
-    #     if ($installerExists -eq $TRUE) {
-    #         # todo
-    #     }else{
-    #         write-host "Could not find software $softwareFromJob in software path. Please ensure the folder exists and a install.bat file exists."
-    #         $softwareToInstall = $softwareToInstall | Where-Object { $_ -ne $softwareFromJob }
-    #     }
-    # }
-    
-    # foreach ($software in $softwareToInstall) {
-    #     $hasSoftware = (gp HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*).DisplayName -Like "*$software*"
-    #     if ($hasSoftware -eq $TRUE) {
-    #         Write-Host "An installation file was found for $software and it is scheduled to be updated"
-    #     } else {
-    #         Write-Host "An installation file was found for $software and it is scheduled to be installed"
-    #     }
-    # }
+$taskDefinition = [PSCustomObject]@{
+    isRerunnable=$false;
+}
+$taskDefinition | Add-Member -Name 'ValidateFunction' -Type ScriptMethod -Value {Validation}
+$taskDefinition | Add-Member -Name 'ExecuteFunction' -Type ScriptMethod -Value {Execution}
+$global:tasks["SoftwareInstallation"] = $taskDefinition
 
-    $status.SoftwareToInstall = $softwareToInstall
+
+Function Validation([Object] $status, [String[]] $softwareToInstall) {
+    $status.SoftwareToInstall = $global:job.SoftwareToInstall
     # $status.Tasks.SoftwareInstallation.Status = "Passed Validation"
 }
 
 ##############################
 
-Function Software-Installation([object] $status) {
+Function Execution() {
     Write-Host "Installing Software..."
-    
+    $status = $global:status
+
     foreach ($softwareToInstall in $status.SoftwareToInstall) {
         Install-Specified-Software $status $softwareToInstall
     }

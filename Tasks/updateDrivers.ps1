@@ -1,18 +1,24 @@
 Import-Module './tools.ps1'
 
-Function Update-Drivers-Run-Validation([Object] $status) {
+$taskDefinition = [PSCustomObject]@{
+    isRerunnable=$true;
+}
+$taskDefinition | Add-Member -Name 'ValidateFunction' -Type ScriptMethod -Value { Validation }
+$taskDefinition | Add-Member -Name 'ExecuteFunction' -Type ScriptMethod -Value { Execution }
+$global:tasks["UpdateDrivers"] = $taskDefinition
+
+
+Function Validation([Object] $status) {
     $BLinfo = manage-bde -status
     # if bitlocker is on then 
     if(($BLinfo | FindStr "Fully Decrypted").length -eq 0) {
         $status.BitLockerStatus = "On"
         throw "Cannot update drivers as bitlocker is on, please suspend bitlocker"
     }
-
-
 }
 
-
-Function Update-Drivers([Object] $status) {
+Function Execution([Object] $status) {
+    #this issues dell cli is installed during the software installation step
 
     $path = Get-File-From-Either-Location "C:\Program Files (x86)\Dell\CommandUpdate\dcu-cli.exe" "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe"
     if ($path -eq "") {

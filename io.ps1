@@ -6,6 +6,7 @@ Function Load-Status-From-File([string] $path, [Object] $defaultStatus) {
     $pathExists = Test-Path "$path/$env:StatusFileName" -PathType Leaf
     if ($pathExists -eq $FALSE){
         Write-Host "Status file does not exist at path $path... creating"
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
         Upsert-File-From-Object $defaultStatus "$path/$env:StatusFileName"
         return $defaultStatus
     }
@@ -13,12 +14,10 @@ Function Load-Status-From-File([string] $path, [Object] $defaultStatus) {
     return $a
 }
 
-Function Load-Job-From-File([string] $path, [Object] $defaultJob, [String] $jobFileName) {
+Function Load-Job-From-File([string] $path, [String] $jobFileName) {
     $pathExists = Test-Path "$path/$jobFileName" -PathType Leaf
     if ($pathExists -eq $FALSE){
-        Write-Host "Job file does not exist at path $path... creating"
-        Upsert-File-From-Object $defaultJob "$path/$jobFileName"
-        return $defaultJob
+       throw "Could not find a job at path $path"
     } 
 
     return Import-Clixml "$path/$jobFileName"

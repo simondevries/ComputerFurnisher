@@ -1,25 +1,23 @@
-# Most of these can be removed
+
 
 param (
     [string]$homeFolder,
     [string]$resourcesFolder,
     [string]$validationOnly
 )
+CLS 
+
+$global:tasks = @{}
 
 Import-Module -name "./Libraries/PSWindowsUpdate/Get-WUInstall.ps1" -force
 Import-Module -name "./Libraries/PSWindowsUpdate/Get-WUList.ps1" -force
 Import-Module -name './tools.ps1' -force
+Import-Module -name './jobRunner.ps1' -force
 Import-Module -name './io.ps1' -force
 Import-Module -name './printer.ps1' -force
-Import-Module -name './_setupTeamViewer.ps1' -force
-Import-Module -name './_windowsUpdate.ps1' -force
-Import-Module -name './_softwareInstallation.ps1' -force
-Import-Module -name './_activateOffice.ps1' -force
-Import-Module -name './_updateDrivers.ps1' -force
-Import-Module -name './_addPrinters.ps1' -force
-Import-Module -name './_addDelProf.ps1' -force
 Import-Module -name './defaultJob.ps1' -force
 Import-Module -name './defaultStatus.ps1' -force
+
 
 function Display-Warning {
     $a = $global:status.HasAcceptedWarning
@@ -27,7 +25,7 @@ function Display-Warning {
         return
     }
  
-    $result = Read-Host "This program performs maintenance on PC's by updating windows, software, drivers and makes configuration changes to make it operate on the Mercy Ships IT infrastructure. Do not run this unless you know it's intended purpose. Would you like to proceed? (Y)es (N)o"
+    $result = Read-Host "This program performs maintenance on PC's by updating windows, software, drivers and makes configuration changes. Do not run this unless you know it's intended purpose. Would you like to proceed? (Y)es (N)o"
     if($result.ToLower() -eq "y") {
         $Wha = $global:status
         $global:status.HasAcceptedWarning = $TRUE
@@ -36,110 +34,6 @@ function Display-Warning {
         Write-Host "Exiting"
         Exit
     }
-}
-
-function Run-With-Retry ([scriptblock] $func, [boolean] $shouldExecute, [Object] $statusOfCurrentTask, [Object] $pOne, [Object] $pTwo) {
-    if($statusOfCurrentTask -eq $NULL) {throw "Null param"}
-    
-    $taskName = $statusOfCurrentTask.Name
-    $taskStatus = $statusOfCurrentTask.Status
-    if ($shouldExecute -eq $FALSE) {
-        return
-    }
-
-    if ($taskStatus.ToLower() -ne "new" -and $taskStatus.ToLower() -ne "success (rerunnable)") {
-        Write-Host "Skipping $taskName as it has the status of $taskStatus"
-        return
-    }
-
-    Write-Host "Validating task $taskName"
-    
-    $cmdInput = $NULL
-    
-    #todo silent mode
-
-    do {
-        $validationStatus = ""
-        Try{
-            $validationStatus = & $func $global:status $pOne $pTwo
-            $taskStatus = "Passed Validation"
-        } Catch {
-            $statusOfCurrentTask.Reason = $_
-            $statusOfCurrentTask.Status = "Failed Validation"
-            Write-Host "Task $taskName failed with the following error: $_"
-            if ($env:silent.ToLower() -eq "true"){
-                $cmdInput = "S"
-            } else {
-                $cmdInput = Read-Host "Press enter to try again, press S to skip?"
-            }
-        }
-
-        Upsert-File-From-Object $global:status "$logFolder/$env:StatusFileName"
-
-    } while (($statusOfCurrentTask.Status -eq "failed validation" -and ($cmdInput -eq $NULL -or $cmdInput.ToLower() -ne 's')))
-}
-
-Function Run-Validation {
-
-
-    Write-Host -ForegroundColor DarkGreen "=== Validating tasks ==="
-    Run-With-Retry ${function:Windows-Update-Run-Validation} $global:job.Tasks.UpdateWindows $global:status.Tasks.UpdateWindows 
-    #For now software install needs to run first to ensure dell command can run
-    Run-With-Retry ${function:Software-Installation-Run-Validation} $global:job.Tasks.SoftwareInstallation $global:status.Tasks.SoftwareInstallation $global:job.SoftwareToInstall
-    Run-With-Retry ${function:Update-Drivers-Run-Validation} $global:job.Tasks.UpdateDrivers $global:status.Tasks.UpdateDrivers
-    Run-With-Retry ${function:Update-Office-Run-Validation} $global:job.Tasks.ActivateOffice $global:status.Tasks.ActivateOffice
-    Run-With-Retry ${function:Add-Printer-Run-Validation} $global:job.Tasks.AddPrinters $global:status.Tasks.AddPrinters
-    Run-With-Retry ${function:Add-DelProf-Validation} $global:job.Tasks.AddDelProf $global:status.Tasks.AddDelProf
-    
-    Write-Host -ForegroundColor DarkGreen "=== Done Validating tasks ==="
-}
-
-Function Run-Task ([scriptblock] $func, [object] $statusOfCurrentTask, [boolean] $shouldExecute, [object] $pOne) {
-
-
-    $taskName = $statusOfCurrentTask.Name
-    $taskStatus = $statusOfCurrentTask.Status
-    if ($shouldExecute -eq $FALSE) {
-        # Write-Host "Skipping $taskName as it is marked as disabled on job.xml"
-        return
-    }
-    if ($taskStatus.ToLower() -ne "new" -and $taskStatus.ToLower() -ne "success (rerunnable)") {
-        Write-Host "Skipping $taskName as it has the status of $taskStatus"
-        return
-    }
-    # Function Install-Specified-Software([object] $status, [string] $softwareToInstall) {
-    #consider passing in the status of the item and handling success and failure automatically based off whether an error was thrown
-    
-    Write-Host "Running task $taskName"
-    Try {
-        $result = & $func $global:status $pOne
-        Write-Host "Successfully completed task: $taskName"
-        if ($statusOfCurrentTask.Status -ne "Success (rerunnable)") {
-            $statusOfCurrentTask.Status = "Success"
-        }
-        $statusOfCurrentTask.Reason = ""
-    } Catch {
-        Write-Host "An error occured when executing $taskName: $_"
-        $statusOfCurrentTask.Status = "Error"
-        $statusOfCurrentTask.Reason = "$_"
-    }
-    Upsert-File-From-Object $global:status "$logFolder/$env:StatusFileName"
-}
-
-
-Function Run-Tasks {
-    if ($validationOnly -eq "true") {
-        Write-Host "Skipping task run as program was run with flag 'validation'"
-        return
-    }
-    Write-Host -ForegroundColor DarkGreen "=== Running tasks ==="
-    Run-Task ${function:Software-Installation} $global:status.Tasks.SoftwareInstallation $global:job.Tasks.SoftwareInstallation 
-    Run-Task ${function:Activate-Office} $global:status.Tasks.ActivateOffice $global:job.Tasks.ActivateOffice
-    Run-Task ${function:Add-Printers} $global:status.Tasks.AddPrinters $global:job.Tasks.AddPrinters $global:job.PrintersToAdd
-    Run-Task ${function:Add-DelProf} $global:status.Tasks.AddDelProf $global:job.Tasks.AddDelProf
-    Run-Task ${function:Update-Drivers} $global:status.Tasks.UpdateDrivers $global:job.Tasks.UpdateDrivers
-    Run-Task ${function:Update-Windows} $global:status.Tasks.UpdateWindows $global:job.Tasks.UpdateWindows
-    Write-Host -ForegroundColor DarkGreen "=== Done running tasks ==="
 }
 
 Function Validate-Paths-Exist {
@@ -237,6 +131,21 @@ Function Determine-Job-Name {
     Notepad.exe "$env:SharedFolder/$jobFileName" | Out-Null #Out-null causes powershell to wait till process killed
 }
 
+Function Add-New-Tasks-To-Jobs () {
+    Get-ChildItem $env:SharedFolder -Filter *.xml | 
+    Foreach-Object {
+        $fileName = $_.Name
+        $jobFromFile = Load-Job-From-File $env:SharedFolder $fileName
+        Foreach ($taskKey in $global:tasks.Keys) {
+            $task = $global:tasks[$taskKey]
+            if ($jobFromFile.Tasks.ContainsKey($taskKey) -eq $FALSE) {
+                $jobFromFile.Tasks[$taskKey] = $FALSE
+                Upsert-File-From-Object $jobFromFile "$env:SharedFolder/$fileName"
+            }
+        }
+    }
+}
+
 Function Check-If-Wants-To-Reset-Number-Of-Executions() {
     if ($env:silent -eq "true"){
         return
@@ -255,33 +164,37 @@ Function Check-If-Wants-To-Reset-Number-Of-Executions() {
     }
 }
 
-CLS
+
 Write-host -ForegroundColor DarkGreen "=========================* Computer Furnisher - Setup *============================="
 
 # Setup #1 
 Check-Server-Connection
-Print-Config-Paths
-Print-Job-Status
 Validate-Paths-Exist
 Map-Network-Drive
+Print-Config-Paths
 
+# Setup #2
+Add-New-Tasks-To-Jobs
 
-
-# Setup #2 load status 
+# Setup #3 load status 
 $logFolder += "$env:LogFolder\$env:computername"
 $global:status = Load-Status-From-File $logFolder $global:status
 Print-Current-Status
 
-# Setup #3 Get job name
+# Setup #4 Get job name
 Determine-Job-Name
-$global:job = Load-Job-From-File $env:SharedFolder $global:job $global:status.JobFileName
+$global:job = Load-Job-From-File $env:SharedFolder $global:status.JobFileName
 
-# Setup #4 change power options to ensure we don't shutdown part way through
+# Print
+
+Print-Job-Status
+
+# Setup #5 change power options to ensure we don't shutdown part way through
 
 C:\Windows\system32\powercfg.exe -change -standby-timeout-ac 0
 C:\Windows\system32\powercfg.exe -change -hibernate-timeout-ac 0
 
-# Setup #5 update last execution
+# Setup #6 update last execution
 
 $global:status.LastExecution = Get-Date -Format o
 Upsert-File-From-Object $global:status "$logFolder/$env:StatusFileName"

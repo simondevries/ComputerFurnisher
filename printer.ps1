@@ -34,20 +34,13 @@ Function Print-Current-Status() {
 }
 
 Function Print-Job-Status() {
+    Write-Host -ForegroundColor DarkGreen "===Job Tasks==="
+
+    foreach ($task in $global:Job.Tasks.Keys) {
+        $taskValue = $global:Job.Tasks[$task]
+        Write-Host "$task : $taskValue"
+    }
     $UpdateWindows = $global:Job.Tasks.UpdateWindows
-    $SoftwareInstall = $global:Job.Tasks.SoftwareInstallation
-    $UpdateDrivers = $global:Job.Tasks.UpdateDrivers
-    $AddPrinters = $global:Job.Tasks.AddPrinters
-    $SetupTeamViewer = $global:Job.Tasks.SetupTeamViewer
-    $ActivateOffice = $global:Job.Tasks.ActivateOffice
-    $AddDelProf = $global.Status.Task.AddDelProf
-    Write-Host -ForegroundColor DarkGreen "===Job Settings==="
-    Write-Host "UpdateWindows: $UpdateWindows"
-    Write-Host "SoftwareInstall: $SoftwareInstall"
-    Write-Host "UpdateDrivers: $UpdateDrivers"
-    Write-Host "AddPrinters: $AddPrinters"
-    Write-Host "SetupTeamViewer: $SetupTeamViewer"
-    Write-Host "ActivateOffice: $ActivateOffice"
-    Write-Host "AddDelProf: $AddDelProf"
-    Write-Host -ForegroundColor DarkGreen "===End Job Settings==="
+
+    Write-Host -ForegroundColor DarkGreen "===End Job Tasks==="
 }
