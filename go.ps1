@@ -1,11 +1,9 @@
 # Most of these can be removed
 
 param (
-    [string]$logFolder,
     [string]$homeFolder,
     [string]$resourcesFolder,
-    [string]$validationOnly,
-    [string]$silent
+    [string]$validationOnly
 )
 
 Import-Module -name "./Libraries/PSWindowsUpdate/Get-WUInstall.ps1" -force
@@ -69,7 +67,7 @@ function Run-With-Retry ([scriptblock] $func, [boolean] $shouldExecute, [Object]
             $statusOfCurrentTask.Reason = $_
             $statusOfCurrentTask.Status = "Failed Validation"
             Write-Host "Task $taskName failed with the following error: $_"
-            if ($global:silent.ToLower() -eq "true"){
+            if ($env:silent.ToLower() -eq "true"){
                 $cmdInput = "S"
             } else {
                 $cmdInput = Read-Host "Press enter to try again, press S to skip?"
@@ -144,6 +142,15 @@ Function Run-Tasks {
     Write-Host -ForegroundColor DarkGreen "=== Done running tasks ==="
 }
 
+Function Validate-Paths-Exist {
+    Validate-Path-Exists $env:SharedFolder "Shared Folder"
+    Validate-Path-Exists $env:SoftwareFolder "Shared Software Install folder"
+    Validate-Path-Exists $env:ComputerFurnisherFolder "Shared Computer Furnisher Code Folder"
+    Validate-Path-Exists $env:LocalFolderPath "Local Computer Furnisher Folder"
+    Create-Folder-If-Does-Not-Exist $env:logFolder
+    Validate-Path-Exists $env:LogFolder "Shared Log Folder"
+}
+
 Function Cleanup-When-Required {
     if ($global:status.NumberOfExecutions -lt 4) {
         return
@@ -160,71 +167,116 @@ Function Cleanup-When-Required {
     echo "Delete flag, this will be deleted on completion" > $env:LocalFolderDeleteFileFlag
 }
 
-
-CLS
-Write-host -ForegroundColor DarkGreen "==========================Computer Furnisher=============================="
-
-$logFolder += "\$env:$env:computername"
-
-if ($silent -eq "true"){
-    Write-Host "Silent mode activated"
+Function Check-Server-Connection {
+    Start-Sleep -s 1
+    if (-NOT (Test-Connection -computername $env:FileServerName -Quiet)) {
+        Write-Host "Error cannot connect to $env:FileServerName. Trying again 20 seconds"
+        Start-Sleep -s 20
+        if (-NOT (Test-Connection -computername $FileServerName -Quiet)) {
+            Write-Host "Still cannot connect to $env:FileServerName... ceasing execution :("
+            Exit
+        }
+    }
+}
+Function Map-Network-Drive {
+    New-PSDrive -Name "$env:SharedDriveLetter" -PSProvider "FileSystem" -Root "$env:DriveRoot" | Out-Null
 }
 
-Start-Sleep -s 1
-if (-NOT (Test-Connection -$env:computername $env:FileServerName -Quiet)) {
-    Write-Host "Error cannot connect to $env:FileServerName. Trying again 20 seconds"
-    Start-Sleep -s 20
-    if (-NOT (Test-Connection -$env:computername $FileServerName -Quiet)) {
-    	Write-Host "Still cannot connect to $env:FileServerName... ceasing execution :("
-    	return
-	}
-}
+Function Determine-Job-Name {
+    $jobFileName = $global:status.JobFileName
 
+    if ($env:silent -eq "true") {
+        Write-Host "Using existing job $jobFileName"
+        Validate-Path-Exists "$env:SharedFolder/$jobFileName" $jobFileName
+        return
+    }
+    if ($jobFileName -ne ""){ # if job file defined
+        $path = "$env:SharedFolder/$jobName"
+        $pathExists = Test-Path $path
+        if ($pathExists -eq $FALSE) {
+            Write-Host "Could not find a job called $jobFileName"
+            Determine-Job-Name
+            return
+        }
+        $res = Read-Host "This process has previous run using job $jobFileName. Hit E to edit the job, hit C to change or create job, hit Enter to continue with selected job"
+        if($res.ToLower() -eq "c") {
+            $global:status.JobFileName = ""
+            Determine-Job-Name
+        }
+        if($res.ToLower() -eq "e") {
+            Notepad.exe "$env:SharedFolder/$jobFileName" | Out-Null #Out-null causes powershell to wait till process killed
+        }
+        return
+    }
 
-# Todo (sdv) logs
-# Write-Host "Software Install folder: $env:"
-# Write-Host "Log folder: $logFolder"
-# Write-Host "Job file name: $jobFileNameForPrint"
-# Write-Host "Home folder: $homeFolder"
-
-
-New-PSDrive -Name $env:SharedDrive -PSProvider "FileSystem" -Root $env:DriveRoot
-
-# Setup #1 - create and validate files/folders
-
-Validate-Folder-Exists $softwareInstallFolder "Software Install folder"
-Create-Folder-If-Does-Not-Exist $logFolder
-Validate-Folder-Exists $homeFolder "Job folder"
-
-#checken or the egg... if I need to clear the status then I load a bad version this way around. Other way around I
-
-# Check-Should-Delete-Status-File
-
-# Setup #2 load status 
-$global:status = Load-Status-From-File $logFolder $global:status
-
-# Setup #3 Get job name
-$jobFileNameForPrint = $global:status.JobFileName
-if ($silent -ne "true"){
-    $res = Read-Host "Enter the job file name you would like to use (default is job)(include .xml). Currently set to $jobFileNameForPrint. Press s skip and use currently set"
-    if ($res -ne "s"){
-        $global:status.JobFileName = $res
+    $res = Read-Host "This computer has not been assigned a job yet. Would you like to define a new job now based off jobTemplate.xml or would you like to use an existing one? (N for new, Type file name for existing)"
+    if ($res.ToLower() -eq "n") {
+        Validate-Path-Exists "$env:SharedFolder/jobTemplate.xml" "JobTemplate.xml"
+        $jobName = Read-Host "Please specify new job name"
+        $jobName  = $jobName -replace '.xml',''
+        Write-Host "Creating..."
+        Copy-Item "$env:SharedFolder/jobTemplate.xml" "$env:SharedFolder/$jobName.xml"
+        $global:status.JobFileName = "$jobName.xml"
+        $global:status.NumberOfExecutions = 0
+    } else {
+        $res  = $res -replace '.xml',''
+        $path = "$env:SharedFolder/$res.xml"
+        $pathExists = Test-Path $path
+        if ($pathExists -eq $FALSE) {
+            Write-Host -ForegroundColor red "Could not find a job called $res"
+            Determine-Job-Name
+            return
+        }
+        $global:status.JobFileName = "$res.xml"
         $global:status.NumberOfExecutions = 0
     }
-    
-    $nOE = $global:status.NumberOfExecutions
-    if ($nOE -gt 2){
-        $res = Read-Host "Computer furnisher has already been run 3 times. Unless reset, the software will cleanup upon completion. Do you want to reset numer of executions to 0? (Y/N)"
-        if ($res -eq "y"){
+
+    $jobFileName = $global:status.JobFileName
+    Write-Host "Opening notepad so you can check settings... Close notepad to continue"
+    Start-Sleep -s 1
+    Notepad.exe "$env:SharedFolder/$jobFileName" | Out-Null #Out-null causes powershell to wait till process killed
+}
+
+Function Check-If-Wants-To-Reset-Number-Of-Executions() {
+    if ($env:silent -eq "true"){
+        return
+    }
+
+    if ($global:status.NumberOfExecutions -gt 2){
+        $res = Read-Host "Computer furnisher has already been run 3 times, this means it will delete itself from this computer after completion. Hit (R) to reset counter to 0 and avoid deletion"
+        if ($res -eq "r"){
             $global:status.NumberOfExecutions = 0
         }
-        Remove-Item -Path $env:LocalFolderDeleteFileFlag
+        
+        $pathExists = Test-Path $env:LocalFolderDeleteFileFlag
+        if ($pathExists -eq $TRUE) {
+            Remove-Item -Path $env:LocalFolderDeleteFileFlag | Out-Null
+        }
     }
 }
 
-$global:job = Load-Job-From-File $homeFolder $global:job $global:status.JobFileName
+CLS
+Write-host -ForegroundColor DarkGreen "=========================* Computer Furnisher - Setup *============================="
 
-# Setup #4 change power options to ensure we don't shutdown part way
+# Setup #1 
+Check-Server-Connection
+Print-Config-Paths
+Print-Job-Status
+Validate-Paths-Exist
+Map-Network-Drive
+
+
+
+# Setup #2 load status 
+$logFolder += "$env:LogFolder\$env:computername"
+$global:status = Load-Status-From-File $logFolder $global:status
+Print-Current-Status
+
+# Setup #3 Get job name
+Determine-Job-Name
+$global:job = Load-Job-From-File $env:SharedFolder $global:job $global:status.JobFileName
+
+# Setup #4 change power options to ensure we don't shutdown part way through
 
 C:\Windows\system32\powercfg.exe -change -standby-timeout-ac 0
 C:\Windows\system32\powercfg.exe -change -hibernate-timeout-ac 0
@@ -240,27 +292,25 @@ $computerFurnisherScheduledTasks = schtasks | Select-String -Pattern 'Computer F
 if ($computerFurnisherScheduledTasks -eq $NULL -or $computerFurnisherScheduledTasks.count -eq 0) {
     # todo (sdv) cleanup should split home folder to jobFolder and software folder or sthng
     # looks like create scheduled task doesn't like it when run off the fileserver drive
-    Write-Host "Importing scheduled task from $schedTaskFilePath, please enter DA credentials to run task as"
+    Write-Host "Importing scheduled task from $env:ComputerFurnisherScheduledTaskPath, this is responsible for running computer furnisher once the computer has rebooted. Please enter DA credentials to run task as"
+    Start-Sleep -s 1 # Get users attention
     $creds = Get-Credential
     schtasks /Create /XML $env:ComputerFurnisherScheduledTaskPath /RU $creds.UserName /RP $creds.GetNetworkCredential().Password /TN "Computer Furnisher"
 }
 
 # Run #1 - User warning
 
-Display-Warning #should be after check should clear status
+Write-host -ForegroundColor DarkGreen "=========================* Computer Furnisher - Execution *============================="
 
-# Run #2 - Status
+Display-Warning
 
-Print-Job-Status $global:job
+# Run #2 - Update number of executions
 $global:status.NumberOfExecutions = $global:status.NumberOfExecutions + 1
-$numOfExecutions = $global:status.NumberOfExecutions
-Write-Host "Number of executions: $numberOfExecutions"
+Check-If-Wants-To-Reset-Number-Of-Executions
 
 # Run #3 validation and tasks
-
 Run-Validation
 Run-Tasks
-Print-Result $global:status
 
 # Cleanup #1 
 
@@ -269,10 +319,12 @@ C:\Windows\system32\powercfg.exe -change -hibernate-timeout-ac 30
 
 # Cleanup #2 - If this is the last execution then cleanup
 
-Write-Host "This is has been run " $global:status.NumberOfExecutions " times."
+Write-Host "Computer furnisher has been run " $global:status.NumberOfExecutions " times."
 Upsert-File-From-Object $global:status "$logFolder/$env:StatusFileName"
 
 Cleanup-When-Required
 
 Write-Host "Power options have been reset. If running from a scheduled task, it will restart in 4 mintues..."
 
+
+Write-host -ForegroundColor DarkGreen "=========================* Computer Furnisher - Done *============================="

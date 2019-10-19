@@ -1,7 +1,7 @@
 
-Function Validate-Folder-Exists([string] $path, [string] $errorFolderName) {
+Function Validate-Path-Exists([string] $path, [string] $errorFolderName) {
     if ([string]::IsNullOrEmpty($path)) {
-        Write-Host("Please specify a $errorFolderName folder path")
+        Write-Host("Please specify a $errorFolderName path")
         EXIT
     }
     $pathExists = Test-Path $path
