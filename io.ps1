@@ -1,6 +1,7 @@
 Import-Module -name "./tools.ps1" -force
 
-#If status file does not exist then it will use the default status
+# Status file contains a log of what tasks have successfully run
+# If status file does not exist then it will use the default status
 Function Load-Status-From-File([string] $path, [Object] $defaultStatus) {
     $pathExists = Test-Path "$path/$env:StatusFileName" -PathType Leaf
     if ($pathExists -eq $FALSE){

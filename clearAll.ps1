@@ -4,7 +4,7 @@ Import-Module -name './tools.ps1' -force
 $logFolderForThisComputer = "$env:LogFolder\$env:computername"
 $statusPath="$env:LogFolder/$env:StatusFileName"
 
-New-PSDrive -Name $env:SharedDrive -PSProvider "FileSystem" -Root $env:SharedDriveAddress
+New-PSDrive -Name $env:SharedDriveLetter -PSProvider "FileSystem" -Root $env:SharedDriveAddress
 
 $pathExists = Test-Path $statusPath -PathType Leaf
 if ($pathExists -eq $TRUE) {
