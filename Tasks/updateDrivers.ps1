@@ -8,16 +8,16 @@ $taskDefinition | Add-Member -Name 'ExecuteFunction' -Type ScriptMethod -Value {
 $global:tasks["UpdateDrivers"] = $taskDefinition
 
 
-Function Validation([Object] $status) {
+Function Validation() {
     $BLinfo = manage-bde -status
     # if bitlocker is on then 
     if(($BLinfo | FindStr "Fully Decrypted").length -eq 0) {
-        $status.BitLockerStatus = "On"
+        $global:status.BitLockerStatus = "On"
         throw "Cannot update drivers as bitlocker is on, please suspend bitlocker"
     }
 }
 
-Function Execution([Object] $status) {
+Function Execution() {
     #this issues dell cli is installed during the software installation step
 
     $path = Get-File-From-Either-Location "C:\Program Files (x86)\Dell\CommandUpdate\dcu-cli.exe" "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe"

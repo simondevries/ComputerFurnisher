@@ -7,7 +7,7 @@ $global:tasks["SoftwareInstallation"] = $taskDefinition
 
 
 Function Validation([Object] $status, [String[]] $softwareToInstall) {
-    $status.SoftwareToInstall = $global:job.SoftwareToInstall
+    $global:status.SoftwareToInstall = $global:job.SoftwareToInstall
     # $status.Tasks.SoftwareInstallation.Status = "Passed Validation"
 }
 

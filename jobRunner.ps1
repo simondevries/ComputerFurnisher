@@ -26,7 +26,7 @@ Function Run-Tasks {
             # todo sdv test
             continue
         }
-        Run-Task $task.ValidateFunction $global:status.Tasks[$taskKey]
+        Run-Task $task.ExecuteFunction $global:status.Tasks[$taskKey]
     }
     
     Write-Host -ForegroundColor DarkGreen "=== Done running tasks ==="
@@ -88,7 +88,7 @@ function Run-With-Retry ([Object] $func, [Object]$statusOfCurrentTask) {
     $taskName = $statusOfCurrentTask.Name
     $taskStatus = $statusOfCurrentTask.Status
 
-    Write-Host "Validating task $taskName : $func"
+    Write-Host "Validating task $taskName"
     
     $cmdInput = $NULL
     
